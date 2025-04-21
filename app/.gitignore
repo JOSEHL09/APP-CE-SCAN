@@ -1,1 +1,57 @@
-/build
+# Archivos y carpetas del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de compilación
+/build/
+*/build/
+
+# Archivos de configuración de Android Studio
+.idea/
+*.iml
+
+# Archivos de configuración local
+local.properties
+.gradle/
+captures/
+
+# Archivos de registro
+*.log
+
+# Archivos de caché
+*.apk
+*.ap_
+*.dex
+*.class
+*.jar
+*.keystore
+*.so
+*.swp
+
+# Archivos generados por Gradle
+.gradle/
+build/
+out/
+!gradle-wrapper.jar
+
+# Archivos de configuración de ProGuard
+proguard/
+proguard-rules.pro
+
+# Archivos de configuración de NDK
+obj/
+
+# Archivos de configuración de IntelliJ
+*.ipr
+*.iws
+*.idea/
+
+# Archivos de configuración de empaquetado
+*.jks
+*.properties
+
+# Archivos de configuración de cobertura de código
+*.ec
+
+# Archivos relacionados con Jetpack Compose
+.compose-cache/
