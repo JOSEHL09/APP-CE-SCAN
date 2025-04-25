@@ -13,6 +13,8 @@ import com.contraentrega.ceapp.R
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
+import kotlin.code
+import kotlin.text.compareTo
 
 data class ScannedBarcode(val code: String, val responseCode: Int)
 data class Client(val name: String, val id: Int)
@@ -54,6 +56,7 @@ class QrViewModel(application: Application) : AndroidViewModel(application) {
 
     val clients = listOf(
         Client("PERU FIT", 42),
+        Client("SWISS NATURE LABS SPA", 45),
     )
 
     init {
@@ -142,66 +145,88 @@ class QrViewModel(application: Application) : AndroidViewModel(application) {
                 _scannedBarcode.value = code
                 isScanning.value = false
 
+                // Verificar si el código contiene solo dígitos
+                if (!code.matches(Regex("^\\d+$"))) {
+                    // Código no numérico, mostrar mensaje de error
+                    showToastAndPlaySound(
+                        "Número de orden no válido. El código debe ser numérico.",
+                        R.raw.error_sound
+                    )
+                    // Reactivar el escáner para permitir otro intento
+                    isScanning.value = true
+                    return
+                }
                 // Verifica si el código ya ha sido escaneado antes de agregarlo
                 val existingBarcode = _scannedBarcodes.find { it.code == code }
 
                 val clientId = selectedClient.value?.id ?: return
 
-                if (existingBarcode == null) {
-                    // Crear la solicitud
-                    val updateRequest = UpdateOrderRequest(
-                        idClient = clientId,
-                        orderNumber = code.toInt(),
-                        idStatus = 26,
-                        serviceType = 3
-                    )
+                try {
+                    if (existingBarcode == null) {
+                        // Crear la solicitud
+                        val updateRequest = UpdateOrderRequest(
+                            idClient = clientId,
+                            orderNumber = code.toInt(),
+                            idStatus = 26,
+                            serviceType = 3
+                        )
 
-                    // Enviar la solicitud
-                    RetrofitInstance.orderApi.updateOrderStatus(updateRequest).enqueue(object : Callback<UpdateOrderResponse> {
-                        override fun onResponse(call: Call<UpdateOrderResponse>, response: Response<UpdateOrderResponse>) {
-                            if (response.isSuccessful && response.body() != null) {
-                                val updateResponse = response.body()!!
+                        // Enviar la solicitud
+                        RetrofitInstance.orderApi.updateOrderStatus(updateRequest).enqueue(object : Callback<UpdateOrderResponse> {
+                            override fun onResponse(call: Call<UpdateOrderResponse>, response: Response<UpdateOrderResponse>) {
+                                if (response.isSuccessful && response.body() != null) {
+                                    val updateResponse = response.body()!!
 
-                                // Usamos el código de respuesta de la API
-                                val updateCode = updateResponse.code
-                                val responseCode = if (updateCode == "1") 200 else 400
+                                    // Usamos el código de respuesta de la API
+                                    val updateCode = updateResponse.code
+                                    val responseCode = if (updateCode == "1") 200 else 400
 
-                                // Agregamos el código escaneado con su estado
-                                _scannedBarcodes.add(ScannedBarcode(code, responseCode))
+                                    // Agregamos el código escaneado con su estado
+                                    _scannedBarcodes.add(ScannedBarcode(code, responseCode))
 
-                                // Determinamos el mensaje y el sonido según el resultado
-                                val message = if (updateCode == "1") {
-                                    "Orden $code actualizada correctamente"
+                                    // Determinamos el mensaje y el sonido según el resultado
+                                    val message = if (updateCode == "1") {
+                                        "Orden $code actualizada correctamente"
+                                    } else {
+                                        "Orden $code leída pero no actualizada"
+                                    }
+
+                                    val soundResId = when (updateCode) {
+                                        "1" -> R.raw.success_sound
+                                        "0" -> R.raw.alarm_sound  // Nuevo sonido de alarma
+                                        else -> R.raw.error_sound
+                                    }
+
+                                    showToastAndPlaySound(message, soundResId)
+                                    Log.d("API_UPDATE", "Respuesta: ${updateResponse.code} - ${updateResponse.message} - Orden: $code")
                                 } else {
-                                    "Orden $code leída pero no actualizada"
+                                    _scannedBarcodes.add(ScannedBarcode(code, response.code()))
+                                    showToastAndPlaySound(
+                                        "Error al actualizar orden $code: ${response.code()}",
+                                        R.raw.error_sound
+                                    )
                                 }
-
-                                val soundResId = when (updateCode) {
-                                    "1" -> R.raw.success_sound
-                                    "0" -> R.raw.alarm_sound  // Nuevo sonido de alarma
-                                    else -> R.raw.error_sound
-                                }
-
-                                showToastAndPlaySound(message, soundResId)
-                                Log.d("API_UPDATE", "Respuesta: ${updateResponse.code} - ${updateResponse.message} - Orden: $code")
-                            } else {
-                                _scannedBarcodes.add(ScannedBarcode(code, response.code()))
-                                showToastAndPlaySound(
-                                    "Error al actualizar orden $code: ${response.code()}",
-                                    R.raw.error_sound
-                                )
                             }
-                        }
 
-                        override fun onFailure(call: Call<UpdateOrderResponse>, t: Throwable) {
-                            _scannedBarcodes.add(ScannedBarcode(code, 500))
-                            showToastAndPlaySound("Error de conexión: ${t.message}", R.raw.error_sound)
-                            Log.e("API_UPDATE", "Error al llamar API", t)
-                        }
-                    })
-                } else {
-                    // Mostrar que ya fue escaneado
-                    showToastAndPlaySound("Código $code ya fue escaneado", R.raw.error_sound)
+                            override fun onFailure(call: Call<UpdateOrderResponse>, t: Throwable) {
+                                _scannedBarcodes.add(ScannedBarcode(code, 500))
+                                showToastAndPlaySound("Error de conexión: ${t.message}", R.raw.error_sound)
+                                Log.e("API_UPDATE", "Error al llamar API", t)
+                            }
+                        })
+                    } else {
+                        // Mostrar que ya fue escaneado
+                        showToastAndPlaySound("Código $code ya fue escaneado", R.raw.error_sound)
+                    }
+                } catch (e: NumberFormatException) {
+                    // Por si acaso pasó la primera validación pero sigue fallando
+                    Log.e("QR_SCAN", "Error al convertir código: $code", e)
+                    showToastAndPlaySound(
+                        "Número de orden no válido. Escanee nuevamente.",
+                        R.raw.error_sound
+                    )
+                    // Reactivar el escáner
+                    isScanning.value = true
                 }
             }
         }
